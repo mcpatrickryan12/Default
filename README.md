@@ -46,8 +46,6 @@ requires a SuperGrok or X Premium+ subscription).
 - Verified against the documentation shipped in
   [xai-org/grok-build](https://github.com/xai-org/grok-build) (v1.x user guide);
   upstream test suite green with the driver added.
-- Not yet exercised against a live authenticated `grok` binary — the two behaviors to
-  confirm on first real run (headless deny fallback; `--allow` acceptance of every
-  packaged allowlist spelling) are listed at the end of
-  [docs/grok-build-driver.md](docs/grok-build-driver.md), and both are isolated inside
-  the driver.
+- Confirmed on a live authenticated `grok` release binary (smoke run 2026-08-31:
+  28 tool calls, real cost stamped, max-turns mapped correctly) — details at the
+  end of [docs/grok-build-driver.md](docs/grok-build-driver.md).

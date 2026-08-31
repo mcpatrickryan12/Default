@@ -131,11 +131,24 @@ is governed by `--disallowed-tools Agent`, which the driver never passes).
 - Full upstream suite green with the driver added: **1195 passed, 0 failed**
   (baseline before changes: 1168 passed); `npm run lint` (Biome CI) clean.
 
-## Remaining caveat
+## Live-binary confirmation
 
-The driver has not yet run end-to-end against a live authenticated `grok` binary
-(subscription-gated login). The wire format, permission semantics, and rule
-vocabulary are verified against the shipped documentation *and* the Rust
-implementation, so the residual risk is a release binary diverging from its own
-public source — small, and worth one smoke run (`verity agent-exec … --agent
-grok`) on a machine with a Grok Build login.
+Smoke-run against a live authenticated `grok` release binary (2026-08-31,
+`verity agent-exec build 7 --run-id smoke-1 --agent grok --max-turns 10 --json`):
+
+```json
+{"schema":1,"role":"build","outcome":"failed","tokens":{"in":356903,"out":3941},
+ "est_usd":0.05248172,"wall_secs":111,"tool_calls":28,"artifacts":{},
+ "error":"max turns (10) exhausted"}
+```
+
+The failed outcome is the 10-turn ceiling, deliberately low for a smoke run —
+what it proves is the driver surface: the release binary accepted the full argv
+including the projected `--allow` rules (28 tool calls ran, so the permission
+grants work), the streaming-messages-json transcript parsed, usage normalized,
+Grok stamped a real cost that surfaced as `est_usd`, and max-turns exhaustion
+mapped to the contract's error string. The one path not exercised live is the
+success-path result marker (the role never finished within the ceiling); that
+code is byte-identical to the reference driver's. The stamped cost also matters
+for autonomy later: the worker's budget breaker gates on unknown cost "until a
+provider's cost accounting is proven" — for this login, it is.

@@ -92,11 +92,22 @@ Two behaviors were confirmed by reading xai-org/grok-build's Rust implementation
   passed), and a list projecting to nothing refuses the dispatch
   (`unenforceable-policy`) rather than launching rule-less.
 
-## Remaining caveat
+## Confirmed on the live release binary
 
-Not yet exercised against a live authenticated `grok` binary (subscription-gated
-login) — the residual risk is a release binary diverging from its own public
-source. I can run that one smoke confirmation once pointed at a live login.
+Smoke-run on a signed-in `grok` (2026-08-31): `verity agent-exec build 7
+--run-id smoke-1 --agent grok --max-turns 10 --json` returned
+
+```json
+{"schema":1,"role":"build","outcome":"failed","tokens":{"in":356903,"out":3941},"est_usd":0.05248172,"wall_secs":111,"tool_calls":28,"artifacts":{},"error":"max turns (10) exhausted"}
+```
+
+The failed outcome is just the deliberately low 10-turn smoke ceiling; what it
+proves is the surface — the release binary accepted the projected `--allow`
+rules (28 tool calls ran), the transcript parsed, usage normalized, real cost
+was stamped and surfaced as `est_usd` (relevant to the worker's cost-unknown
+breaker if grok ever becomes worker-selectable), and max-turns exhaustion
+mapped to the contract error. Only the success-path result marker wasn't
+exercised live; that code is byte-identical to the reference driver's.
 
 If you'd rather receive this as a mailed patch or a reference PR instead of the
 branch link, say the word.
