@@ -1,4 +1,4 @@
-From 738af744b05c1a349839db5cd1c3dea08bf6decd Mon Sep 17 00:00:00 2001
+From 07561f0a1e4b606a830ae6fc7d370e63908e7eb3 Mon Sep 17 00:00:00 2001
 From: Ryan McDonald <ryan.mcdonald@bit-bud.com>
 Date: Mon, 31 Aug 2026 03:38:39 +0000
 Subject: [PATCH] Add Grok Build (grok) provider driver, installer host, and
@@ -14,30 +14,34 @@ agent-exec.cjs untouched.
 - agents/grok.cjs: headless invocation over Grok Build's
   --output-format streaming-messages-json (the Messages stream-json wire
   format, so transcript parsing / tool counting / usage normalization match
-  the reference driver by construction). T06 allowlist entries travel
-  verbatim as repeatable --allow flags (Grok's rule grammar accepts the
-  Bash(cmd:*) prefix form); no auto-approve flag is ever passed, keeping
-  deny-by-default honest, and ADR-0029 local-substrate narrowing applies
-  identically. Max-turns exhaustion maps from both the error_max_turns
-  subtype and Grok's max_turn_requests stop_reason.
+  the reference driver by construction). T06 allowlist entries are projected
+  onto Grok's rule-parser vocabulary (verified against xai-org/grok-build
+  permission/rules.rs; headless --allow parsing is strict, so an unknown
+  prefix like Task would abort the invocation) and travel verbatim as
+  repeatable --allow flags; a list projecting to nothing refuses the
+  dispatch (unenforceable-policy). No auto-approve flag is ever passed —
+  Grok's headless mode answers un-ruled permission requests with Cancelled
+  (fail-closed, verified in headless.rs) — and ADR-0029 local-substrate
+  narrowing applies identically. Max-turns exhaustion maps from both the
+  error_max_turns subtype and Grok's max_turn_requests stop_reason.
 - install --grok: flat verity-<role>.md commands under ~/.grok/commands
   (GROK_HOME honored) with paired .tools.json allowlists, /verity:x
   handoffs flattened to /verity-x, engine + install state copied.
 - doctor --agent grok: git + gh + grok registry (no claude row), three
   environment rows, and ~/.grok as an install-state selection root.
 - verity.grokBuildMinVersion = 1.0.0 (Grok Build's v1.0 headless surface).
-- tests/agents-grok.test.cjs: 25 characterization tests incl. a CLI
-  end-to-end over a stub binary.
+- tests/agents-grok.test.cjs: 27 characterization tests incl. the
+  vocabulary projection end-to-end and a CLI run over a stub binary.
 ---
  package.json                    |   1 +
- tests/agents-grok.test.cjs      | 514 ++++++++++++++++++++++++++++++++
+ tests/agents-grok.test.cjs      | 556 ++++++++++++++++++++++++++++++++
  tests/agents.test.cjs           |  10 +-
- verity/bin/lib/agents/grok.cjs  | 362 ++++++++++++++++++++++
+ verity/bin/lib/agents/grok.cjs  | 394 ++++++++++++++++++++++
  verity/bin/lib/agents/index.cjs |   1 +
- verity/bin/lib/doctor.cjs       | 122 +++++++-
+ verity/bin/lib/doctor.cjs       | 122 ++++++-
  verity/bin/lib/install.cjs      |  78 ++++-
  verity/engine-meta.json         |   1 +
- 8 files changed, 1078 insertions(+), 11 deletions(-)
+ 8 files changed, 1152 insertions(+), 11 deletions(-)
  create mode 100644 tests/agents-grok.test.cjs
  create mode 100644 verity/bin/lib/agents/grok.cjs
 
@@ -55,10 +59,10 @@ index 1750b02..a75cbe9 100644
    "scripts": {
 diff --git a/tests/agents-grok.test.cjs b/tests/agents-grok.test.cjs
 new file mode 100644
-index 0000000..2630d6c
+index 0000000..865ef15
 --- /dev/null
 +++ b/tests/agents-grok.test.cjs
-@@ -0,0 +1,514 @@
+@@ -0,0 +1,556 @@
 +// Characterization suite for the Grok Build driver (agents/grok.cjs) — the
 +// same observation discipline as tests/agents.test.cjs: the process boundary
 +// (CLI argv in, result object / exit code / stderr out) and stable module
@@ -160,7 +164,10 @@ index 0000000..2630d6c
 +
 +// A scratch role with a KNOWN allowlist, so argv-order tests can assert the
 +// exact tail instead of depending on a packaged .tools.json.
-+const ECHO_TOOLS = ['Read', 'Grep', 'Bash(git *)'];
++const ECHO_TOOLS = ['Read', 'Grep', 'Task', 'Bash(git *)'];
++// What must actually reach --allow: the T06 list projected onto Grok's rule
++// vocabulary (Task has no Grok rule spelling; strict parsing would abort on it).
++const ECHO_TOOLS_PROJECTED = ['Read', 'Grep', 'Bash(git *)'];
 +function echoRole(fx) {
 +  const roleDir = path.join(fx.dir, 'commands', 'verity');
 +  fs.mkdirSync(roleDir, { recursive: true });
@@ -316,6 +323,45 @@ index 0000000..2630d6c
 +  }
 +});
 +
++// --- rule-vocabulary projection ---
++// Verified against xai-org/grok-build sources: permission/rules.rs
++// tool_name_to_filter (the accepted prefixes; unknown -> Err) and headless.rs
++// parse_permission_rules_strict (one bad --allow aborts the invocation).
++
++test('grok: projectAllowlist keeps every Grok-expressible entry verbatim, drops the rest', () => {
++  const projected = grok.projectAllowlist([
++    'Read',
++    'Task',
++    'Write(docs/**)',
++    'Glob',
++    'Bash(git status:*)',
++    'mcp__github__get_issue',
++    'FutureTool(x)',
++  ]);
++  assertEqual(
++    JSON.stringify(projected),
++    JSON.stringify([
++      'Read',
++      'Write(docs/**)',
++      'Glob',
++      'Bash(git status:*)',
++      'mcp__github__get_issue',
++    ]),
++    'kept entries byte-identical and in order; Task and unknown prefixes dropped',
++  );
++});
++
++test('grok: a role whose allowlist projects to nothing is refused, never launched rule-less', () => {
++  let err = null;
++  try {
++    grok.projectAllowlist(['Task', 'NotebookEdit']);
++  } catch (e) {
++    err = e;
++  }
++  assert(err?.message.includes('refusing the dispatch'), 'fails closed');
++  assertEqual(err.slug, 'unenforceable-policy');
++});
++
 +// --- allowlist (T06) ---
 +
 +test('grok: allowlist errors — missing file / invalid JSON / empty array', () => {
@@ -452,8 +498,8 @@ index 0000000..2630d6c
 +  const allows = argv.filter((_, i) => argv[i - 1] === '--allow');
 +  assertEqual(
 +    JSON.stringify(allows),
-+    JSON.stringify(ECHO_TOOLS),
-+    'T06 entries verbatim as --allow',
++    JSON.stringify(ECHO_TOOLS_PROJECTED),
++    'T06 entries projected onto the Grok rule vocabulary, then verbatim as --allow',
 +  );
 +});
 +
@@ -605,10 +651,10 @@ index 0218187..82dbcc5 100644
    try {
 diff --git a/verity/bin/lib/agents/grok.cjs b/verity/bin/lib/agents/grok.cjs
 new file mode 100644
-index 0000000..af78ba2
+index 0000000..8e8d63c
 --- /dev/null
 +++ b/verity/bin/lib/agents/grok.cjs
-@@ -0,0 +1,362 @@
+@@ -0,0 +1,394 @@
 +// Grok Build provider driver — the ONLY module that knows the Grok Build wire
 +// format. Modeled on claude.cjs (the reference driver): Grok Build's
 +// `--output-format streaming-messages-json` deliberately emits the Messages
@@ -779,12 +825,43 @@ index 0000000..af78ba2
 +  return `${text.trimEnd()}\n${RESULT_CONTRACT}`;
 +}
 +
++// Grok's rule-parser prefix vocabulary, verified against the source
++// (xai-org/grok-build crates/codegen/xai-grok-workspace/src/permission/
++// rules.rs `tool_name_to_filter`: Write folds into Edit, Glob into Grep;
++// bare `mcp__…` spellings are the recognized MCP rule form). Headless mode
++// parses --allow/--deny STRICTLY (headless.rs parse_permission_rules_strict)
++// — ONE unrecognized prefix aborts the whole invocation — so entries outside
++// the vocabulary must be dropped before argv construction, never passed
++// through. Dropping is narrowing only: the uncovered tool call then fails
++// closed at runtime (headless answers un-ruled permission requests with
++// Cancelled outside yolo mode), it is never silently allowed. `Task` is the
++// one packaged T06 entry this touches today, and it loses nothing: Grok
++// subagents are not permission-gated (spawning is governed by
++// --disallowed-tools Agent, which this driver never passes).
++const GROK_RULE_PREFIXES =
++  /^(Bash|Read|Edit|Write|MCPTool|Grep|Glob|WebFetch|WebSearch|AgentMessage|SendSubagentMessage|SendAgentMessage)\s*(\(|$)/;
++
++function projectAllowlist(allowlist) {
++  const kept = allowlist.filter((t) => {
++    const trimmed = t.trim();
++    return GROK_RULE_PREFIXES.test(trimmed) || trimmed.startsWith('mcp__');
++  });
++  if (kept.length === 0) {
++    throw new AgentExecError(
++      "no entry in this role's allowlist is expressible as a Grok Build permission rule — refusing the dispatch rather than launching a role with no enforceable surface (Grok's strict headless rule parser rejects unknown prefixes, so nothing could be granted)",
++      'unenforceable-policy',
++    );
++  }
++  return kept;
++}
++
 +// The verified headless argv. --verbatim keeps the rendered role text from
 +// being re-interpreted as slash-command/attachment syntax (the prompt IS the
 +// program — expansion would corrupt it). Variadic --allow entries LAST, one
-+// flag per entry (--allow is repeatable, not comma-joined; entries verbatim —
-+// T06, the caller guarantees a non-empty list via readAllowlist). The
-+// optional model override (`agent.model`) is omitted-in.
++// flag per entry (--allow is repeatable, not comma-joined; entries verbatim
++// after the vocabulary projection above — T06, the caller guarantees a
++// non-empty list via readAllowlist). The optional model override
++// (`agent.model`) is omitted-in.
 +function buildArgv({ prompt, maxTurns, allowlist, model }) {
 +  const argv = [
 +    '-p',
@@ -798,7 +875,7 @@ index 0000000..af78ba2
 +  if (model) {
 +    argv.push('--model', model);
 +  }
-+  for (const entry of allowlist) {
++  for (const entry of projectAllowlist(allowlist)) {
 +    argv.push('--allow', entry);
 +  }
 +  return argv;
@@ -959,6 +1036,7 @@ index 0000000..af78ba2
 +  supportsMaxTurns: true,
 +  buildArgv,
 +  checkVersion,
++  projectAllowlist,
 +  countToolCalls,
 +  execute,
 +  narrowForSubstrate,

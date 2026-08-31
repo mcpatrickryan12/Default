@@ -99,7 +99,10 @@ function canned(fx, finalText, overrides = {}) {
 
 // A scratch role with a KNOWN allowlist, so argv-order tests can assert the
 // exact tail instead of depending on a packaged .tools.json.
-const ECHO_TOOLS = ['Read', 'Grep', 'Bash(git *)'];
+const ECHO_TOOLS = ['Read', 'Grep', 'Task', 'Bash(git *)'];
+// What must actually reach --allow: the T06 list projected onto Grok's rule
+// vocabulary (Task has no Grok rule spelling; strict parsing would abort on it).
+const ECHO_TOOLS_PROJECTED = ['Read', 'Grep', 'Bash(git *)'];
 function echoRole(fx) {
   const roleDir = path.join(fx.dir, 'commands', 'verity');
   fs.mkdirSync(roleDir, { recursive: true });
@@ -255,6 +258,45 @@ test('grok: NEVER passes an auto-approve flag — deny-by-default is the permiss
   }
 });
 
+// --- rule-vocabulary projection ---
+// Verified against xai-org/grok-build sources: permission/rules.rs
+// tool_name_to_filter (the accepted prefixes; unknown -> Err) and headless.rs
+// parse_permission_rules_strict (one bad --allow aborts the invocation).
+
+test('grok: projectAllowlist keeps every Grok-expressible entry verbatim, drops the rest', () => {
+  const projected = grok.projectAllowlist([
+    'Read',
+    'Task',
+    'Write(docs/**)',
+    'Glob',
+    'Bash(git status:*)',
+    'mcp__github__get_issue',
+    'FutureTool(x)',
+  ]);
+  assertEqual(
+    JSON.stringify(projected),
+    JSON.stringify([
+      'Read',
+      'Write(docs/**)',
+      'Glob',
+      'Bash(git status:*)',
+      'mcp__github__get_issue',
+    ]),
+    'kept entries byte-identical and in order; Task and unknown prefixes dropped',
+  );
+});
+
+test('grok: a role whose allowlist projects to nothing is refused, never launched rule-less', () => {
+  let err = null;
+  try {
+    grok.projectAllowlist(['Task', 'NotebookEdit']);
+  } catch (e) {
+    err = e;
+  }
+  assert(err?.message.includes('refusing the dispatch'), 'fails closed');
+  assertEqual(err.slug, 'unenforceable-policy');
+});
+
 // --- allowlist (T06) ---
 
 test('grok: allowlist errors — missing file / invalid JSON / empty array', () => {
@@ -391,8 +433,8 @@ test('grok e2e: stub run over the documented wire shape → success result + ver
   const allows = argv.filter((_, i) => argv[i - 1] === '--allow');
   assertEqual(
     JSON.stringify(allows),
-    JSON.stringify(ECHO_TOOLS),
-    'T06 entries verbatim as --allow',
+    JSON.stringify(ECHO_TOOLS_PROJECTED),
+    'T06 entries projected onto the Grok rule vocabulary, then verbatim as --allow',
   );
 });
 

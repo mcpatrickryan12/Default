@@ -60,24 +60,40 @@ ADR-0005 registry discipline — `agent-exec.cjs` untouched:
   Grok-only box can be green) + three environment rows; `~/.grok` as an
   install-state selection root
 - `verity.grokBuildMinVersion: "1.0.0"` in package.json
-- `tests/agents-grok.test.cjs`: 25 characterization tests (exact argv incl. a
-  never-auto-approve invariant, wire-shape parsing with omitted-field tolerance,
-  CLI end-to-end over a stub binary, host pass, installer layout, doctor rows), plus
-  the two stage-8 registry pins in `tests/agents.test.cjs` generalized for a third
-  provider
+- `tests/agents-grok.test.cjs`: 27 characterization tests (exact argv incl. a
+  never-auto-approve invariant, the rule-vocabulary projection end-to-end,
+  wire-shape parsing with omitted-field tolerance, CLI end-to-end over a stub
+  binary, host pass, installer layout, doctor rows), plus the two stage-8
+  registry pins in `tests/agents.test.cjs` generalized for a third provider
 
-`npm test` on the branch: **1193 passed, 0 failed** (v1.3.0 baseline 1168), and
+`npm test` on the branch: **1195 passed, 0 failed** (v1.3.0 baseline 1168), and
 `npm run lint` (Biome CI) is clean.
 
-## Honest caveats
+## Verified against Grok Build's source, not just its docs
 
-Verified against xai-org/grok-build's shipped docs, not yet a live authenticated
-binary (subscription-gated). Two things to confirm on first real run, both isolated
-in the driver: (a) that an un-ruled tool call in headless mode fails closed rather
-than hanging (docs imply it; `GROK_DEFAULT_SELECTED_PERMISSION` is the documented
-knob if not), and (b) that `--allow` accepts every entry spelling used in the
-packaged `.tools.json` files. I can run that confirmation once pointed at a live
-`grok` login.
+Two behaviors were confirmed by reading xai-org/grok-build's Rust implementation:
+
+- **Un-ruled tool calls fail closed headless.** Outside yolo mode, headless
+  answers permission requests with `Cancelled` (`xai-grok-pager/src/headless.rs`)
+  — refused, no hang, no auto-approve — so the driver's deny-by-default posture
+  (never passing an auto-approve flag) is enforced by Grok itself.
+- **Headless rule parsing is strict, and its vocabulary is finite.** One
+  unrecognized `--allow` prefix aborts the invocation
+  (`parse_permission_rules_strict`); the accepted prefixes
+  (`permission/rules.rs`) are Bash, Read, Edit/Write, Grep/Glob, MCPTool,
+  WebFetch, WebSearch, AgentMessage, plus `mcp__…` spellings. Verity's packaged
+  allowlists include `Task`, which is not among them — so the driver projects
+  each T06 list onto that vocabulary before argv construction: expressible
+  entries travel byte-identical, `Task` is dropped (Grok subagents are not
+  permission-gated; spawning is governed by `--disallowed-tools Agent`, never
+  passed), and a list projecting to nothing refuses the dispatch
+  (`unenforceable-policy`) rather than launching rule-less.
+
+## Remaining caveat
+
+Not yet exercised against a live authenticated `grok` binary (subscription-gated
+login) — the residual risk is a release binary diverging from its own public
+source. I can run that one smoke confirmation once pointed at a live login.
 
 If you'd rather receive this as a mailed patch or a reference PR instead of the
 branch link, say the word.

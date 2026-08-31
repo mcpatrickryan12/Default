@@ -35,8 +35,9 @@ choices by xAI make Verity integration nearly free:
 
 2. **`--allow` permission rules use the same `ToolPrefix(pattern)` grammar as
    Verity's T06 allowlists**, and Grok's matcher explicitly accepts Claude's
-   `Bash(cmd:*)` prefix form. T06 entries therefore travel **verbatim**, one
-   repeatable `--allow` flag per entry. The driver never passes `--yolo` /
+   `Bash(cmd:*)` prefix form. Expressible T06 entries therefore travel
+   **verbatim**, one repeatable `--allow` flag per entry (see the rule-vocabulary
+   projection below for the one exception). The driver never passes `--yolo` /
    `--always-approve` / `--permission-mode`: headless runs cannot prompt, so a tool
    call no rule covers fails closed — deny-by-default stays honest, which also lets
    the local-substrate narrowing (ADR-0029: strip `Bash(gh …)`/`WebFetch`/`WebSearch`
@@ -92,27 +93,49 @@ supported; autonomy worker/Actions selection deferred** — the worker's provide
 policy is a separate, deliberate step (the framework gates worker-selectable
 providers on trust tiers).
 
+## The rule-vocabulary projection (a bug the source review caught)
+
+The original driver passed T06 entries to `--allow` unconditionally. Reading Grok
+Build's Rust sources showed that is wrong in one specific way: **headless mode
+parses `--allow`/`--deny` strictly** (`xai-grok-pager/src/headless.rs`,
+`parse_permission_rules_strict`) — a single unrecognized rule prefix aborts the
+whole invocation — and the rule parser's vocabulary
+(`xai-grok-workspace/src/permission/rules.rs`, `tool_name_to_filter`) is exactly
+`Bash`, `Read`, `Edit`/`Write` (folded), `Grep`/`Glob` (folded), `MCPTool`,
+`WebFetch`, `WebSearch`, `AgentMessage` aliases, plus bare `mcp__…` spellings.
+Verity's packaged allowlists include `Task`, which is not in that vocabulary, so
+every role granting `Task` would have failed to launch.
+
+The driver therefore projects each allowlist onto that verified vocabulary before
+building argv (`projectAllowlist`): expressible entries travel byte-identical,
+inexpressible ones are dropped — narrowing only, since an uncovered call then
+fails closed at runtime rather than being allowed — and a list that projects to
+nothing refuses the dispatch (`unenforceable-policy`), never launching rule-less.
+Dropping `Task` costs nothing: Grok subagents are not permission-gated (spawning
+is governed by `--disallowed-tools Agent`, which the driver never passes).
+
 ## Validation
 
-- `tests/agents-grok.test.cjs` — 25 tests in the framework's characterization style:
-  registry, env precedence, version gate, exact argv (including the
-  never-auto-approve invariant), allowlist errors, substrate narrowing, wire-shape
-  parsing/counting/normalization (including omitted-field tolerance and the
-  `max_turn_requests` spelling), CLI end-to-end over a stub binary, host pass,
-  installer layout, and doctor rows.
-- Full upstream suite green with the driver added: **1193 passed, 0 failed**
-  (baseline before changes: 1168 passed).
+- Both fail-closed behaviors the docs implied are now **verified against Grok
+  Build's source** (xai-org/grok-build @ v1.x main): headless answers un-ruled
+  permission requests with `Cancelled` outside yolo mode (`headless.rs`,
+  `RequestPermission` handling) — refused, no hang, no auto-approve — and the
+  strict/lenient parser split plus prefix vocabulary above.
+- `tests/agents-grok.test.cjs` — 27 tests in the framework's characterization
+  style: registry, env precedence, version gate, exact argv (including the
+  never-auto-approve invariant), the vocabulary projection (verbatim keeps,
+  `Task` dropped end-to-end at the process boundary, empty projection refused),
+  allowlist errors, substrate narrowing, wire-shape parsing/counting/normalization
+  (including omitted-field tolerance and the `max_turn_requests` spelling), CLI
+  end-to-end over a stub binary, host pass, installer layout, and doctor rows.
+- Full upstream suite green with the driver added: **1195 passed, 0 failed**
+  (baseline before changes: 1168 passed); `npm run lint` (Biome CI) clean.
 
-## What was not verified against a live binary
+## Remaining caveat
 
-Everything above traces to xai-org/grok-build's shipped docs, not a live login
-(Grok Build requires a SuperGrok/Premium+ subscription). Two behaviors worth
-confirming on first real run, both isolated in the driver if they need adjusting:
-
-1. That an un-ruled tool call in headless mode is auto-denied rather than hanging
-   (the docs' permission model implies fail-closed without a TTY; if a hang is
-   observed, add `GROK_DEFAULT_SELECTED_PERMISSION` to the spawn env in
-   `execute()`).
-2. That `--allow` accepts every entry spelling used in the packaged `.tools.json`
-   files (unknown tool prefixes may warn or error; the matrix in
-   `22-permissions-and-safety.md` covers Bash/Edit/Write/Read/Grep/WebFetch/MCPTool).
+The driver has not yet run end-to-end against a live authenticated `grok` binary
+(subscription-gated login). The wire format, permission semantics, and rule
+vocabulary are verified against the shipped documentation *and* the Rust
+implementation, so the residual risk is a release binary diverging from its own
+public source — small, and worth one smoke run (`verity agent-exec … --agent
+grok`) on a machine with a Grok Build login.

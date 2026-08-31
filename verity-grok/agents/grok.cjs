@@ -168,12 +168,43 @@ function renderPrompt(file, roleArgs) {
   return `${text.trimEnd()}\n${RESULT_CONTRACT}`;
 }
 
+// Grok's rule-parser prefix vocabulary, verified against the source
+// (xai-org/grok-build crates/codegen/xai-grok-workspace/src/permission/
+// rules.rs `tool_name_to_filter`: Write folds into Edit, Glob into Grep;
+// bare `mcp__…` spellings are the recognized MCP rule form). Headless mode
+// parses --allow/--deny STRICTLY (headless.rs parse_permission_rules_strict)
+// — ONE unrecognized prefix aborts the whole invocation — so entries outside
+// the vocabulary must be dropped before argv construction, never passed
+// through. Dropping is narrowing only: the uncovered tool call then fails
+// closed at runtime (headless answers un-ruled permission requests with
+// Cancelled outside yolo mode), it is never silently allowed. `Task` is the
+// one packaged T06 entry this touches today, and it loses nothing: Grok
+// subagents are not permission-gated (spawning is governed by
+// --disallowed-tools Agent, which this driver never passes).
+const GROK_RULE_PREFIXES =
+  /^(Bash|Read|Edit|Write|MCPTool|Grep|Glob|WebFetch|WebSearch|AgentMessage|SendSubagentMessage|SendAgentMessage)\s*(\(|$)/;
+
+function projectAllowlist(allowlist) {
+  const kept = allowlist.filter((t) => {
+    const trimmed = t.trim();
+    return GROK_RULE_PREFIXES.test(trimmed) || trimmed.startsWith('mcp__');
+  });
+  if (kept.length === 0) {
+    throw new AgentExecError(
+      "no entry in this role's allowlist is expressible as a Grok Build permission rule — refusing the dispatch rather than launching a role with no enforceable surface (Grok's strict headless rule parser rejects unknown prefixes, so nothing could be granted)",
+      'unenforceable-policy',
+    );
+  }
+  return kept;
+}
+
 // The verified headless argv. --verbatim keeps the rendered role text from
 // being re-interpreted as slash-command/attachment syntax (the prompt IS the
 // program — expansion would corrupt it). Variadic --allow entries LAST, one
-// flag per entry (--allow is repeatable, not comma-joined; entries verbatim —
-// T06, the caller guarantees a non-empty list via readAllowlist). The
-// optional model override (`agent.model`) is omitted-in.
+// flag per entry (--allow is repeatable, not comma-joined; entries verbatim
+// after the vocabulary projection above — T06, the caller guarantees a
+// non-empty list via readAllowlist). The optional model override
+// (`agent.model`) is omitted-in.
 function buildArgv({ prompt, maxTurns, allowlist, model }) {
   const argv = [
     '-p',
@@ -187,7 +218,7 @@ function buildArgv({ prompt, maxTurns, allowlist, model }) {
   if (model) {
     argv.push('--model', model);
   }
-  for (const entry of allowlist) {
+  for (const entry of projectAllowlist(allowlist)) {
     argv.push('--allow', entry);
   }
   return argv;
@@ -348,6 +379,7 @@ module.exports = {
   supportsMaxTurns: true,
   buildArgv,
   checkVersion,
+  projectAllowlist,
   countToolCalls,
   execute,
   narrowForSubstrate,
