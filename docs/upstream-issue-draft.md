@@ -60,6 +60,9 @@ ADR-0005 registry discipline — `agent-exec.cjs` untouched:
   Grok-only box can be green) + three environment rows; `~/.grok` as an
   install-state selection root
 - `verity.grokBuildMinVersion: "1.0.0"` in package.json
+- User-facing docs: README works-with line, install snippet, four-host matrix +
+  a Grok Build users paragraph; QUICKSTART Grok Build section (install,
+  `/verity-<role>` invocation, headless usage, doctor troubleshooting table)
 - `tests/agents-grok.test.cjs`: 27 characterization tests (exact argv incl. a
   never-auto-approve invariant, the rule-vocabulary projection end-to-end,
   wire-shape parsing with omitted-field tolerance, CLI end-to-end over a stub
