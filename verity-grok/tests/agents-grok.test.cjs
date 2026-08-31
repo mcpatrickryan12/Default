@@ -71,7 +71,9 @@ function canned(fx, finalText, overrides = {}) {
     },
     {
       type: 'assistant',
-      message: { content: [{ type: 'tool_use', id: 'call_2', name: 'run_terminal_cmd', input: {} }] },
+      message: {
+        content: [{ type: 'tool_use', id: 'call_2', name: 'run_terminal_cmd', input: {} }],
+      },
       session_id: 's-g1',
     },
     {
@@ -180,7 +182,9 @@ test('grok: VERITY_GROK_BIN wins over VERITY_AGENT_BIN wins over default', () =>
 // --- version gate ---
 
 test('grok: version gate — missing / unparsable / too-old / ok', () => {
-  const exec = (out, status = 0, error = null) => () => ({ stdout: out, status, error });
+  const exec =
+    (out, status = 0, error = null) =>
+    () => ({ stdout: out, status, error });
   const missing = grok.checkVersion('grok', { exec: exec('', 1, { code: 'ENOENT' }) });
   assertEqual(missing.ok, false);
   assertEqual(missing.slug, 'agent-missing');
@@ -232,7 +236,12 @@ test('grok: buildArgv — verbatim prompt, streaming-messages-json, repeatable -
 test('grok: buildArgv — model override is omitted-in', () => {
   const without = grok.buildArgv({ prompt: 'P', maxTurns: 1, allowlist: ['Read'] });
   assert(!without.includes('--model'), 'no --model without an override');
-  const withModel = grok.buildArgv({ prompt: 'P', maxTurns: 1, allowlist: ['Read'], model: 'grok-4.6' });
+  const withModel = grok.buildArgv({
+    prompt: 'P',
+    maxTurns: 1,
+    allowlist: ['Read'],
+    model: 'grok-4.6',
+  });
   const i = withModel.indexOf('--model');
   assert(i > -1, '--model present with an override');
   assertEqual(withModel[i + 1], 'grok-4.6');
@@ -256,7 +265,7 @@ test('grok: allowlist errors — missing file / invalid JSON / empty array', () 
   } catch (e) {
     err = e;
   }
-  assert(err && err.message.includes('deny-all'), 'missing file is deny-all');
+  assert(err?.message.includes('deny-all'), 'missing file is deny-all');
 
   const bad = path.join(fx.dir, 'bad.tools.json');
   fs.writeFileSync(bad, '{nope');
@@ -266,7 +275,7 @@ test('grok: allowlist errors — missing file / invalid JSON / empty array', () 
   } catch (e) {
     err = e;
   }
-  assert(err && err.message.includes('invalid allowlist'), 'invalid JSON rejected');
+  assert(err?.message.includes('invalid allowlist'), 'invalid JSON rejected');
 
   const empty = path.join(fx.dir, 'empty.tools.json');
   fs.writeFileSync(empty, '[]');
@@ -276,7 +285,7 @@ test('grok: allowlist errors — missing file / invalid JSON / empty array', () 
   } catch (e) {
     err = e;
   }
-  assert(err && err.message.includes('non-empty'), 'empty array rejected');
+  assert(err?.message.includes('non-empty'), 'empty array rejected');
 });
 
 // --- substrate narrowing (ADR-0029) ---
@@ -298,7 +307,7 @@ test('grok: narrowing to an empty allowlist refuses the dispatch', () => {
   } catch (e) {
     err = e;
   }
-  assert(err && err.message.includes('NO tools at all'), 'fails closed, never tool-less');
+  assert(err?.message.includes('NO tools at all'), 'fails closed, never tool-less');
 });
 
 // --- transcript parsing / counting / normalization ---
@@ -313,7 +322,11 @@ test('grok: parseTranscript finds the terminal result; tool_use counted, tool_re
   const final = grok.parseTranscript(fx.transcriptFile);
   assert(final && final.type === 'result', 'terminal result found');
   assertEqual(final.result, 'final text');
-  assertEqual(grok.countToolCalls(fx.transcriptFile), 2, 'two tool_use blocks, tool_result excluded');
+  assertEqual(
+    grok.countToolCalls(fx.transcriptFile),
+    2,
+    'two tool_use blocks, tool_result excluded',
+  );
 });
 
 test('grok: usage normalization — uncached input + both cache buckets; cost float verbatim', () => {
@@ -375,8 +388,12 @@ test('grok e2e: stub run over the documented wire shape → success result + ver
   assertEqual(argv[argv.indexOf('--output-format') + 1], 'streaming-messages-json');
   assert(argv.includes('--verbatim'), 'prompt sent verbatim');
   assertEqual(argv[argv.indexOf('--max-turns') + 1], '4');
-  const allows = argv.reduce((acc, a, i) => (a === '--allow' ? [...acc, argv[i + 1]] : acc), []);
-  assertEqual(JSON.stringify(allows), JSON.stringify(ECHO_TOOLS), 'T06 entries verbatim as --allow');
+  const allows = argv.filter((_, i) => argv[i - 1] === '--allow');
+  assertEqual(
+    JSON.stringify(allows),
+    JSON.stringify(ECHO_TOOLS),
+    'T06 entries verbatim as --allow',
+  );
 });
 
 test('grok e2e: version below pin → 30, version-too-old, names pin + remedy', () => {
@@ -450,7 +467,7 @@ test('install dispatch: --grok is a harness flag, mutually exclusive with the ot
   } catch (e) {
     err = e;
   }
-  assert(err && err.message.includes('mutually exclusive'), 'ambiguous selection rejected');
+  assert(err?.message.includes('mutually exclusive'), 'ambiguous selection rejected');
 });
 
 // --- doctor ---

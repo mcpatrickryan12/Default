@@ -18,14 +18,15 @@ headless `agent-exec` at the same tier Codex first landed at (autonomy-worker
 selection deferred).
 
 Per CONTRIBUTING's "describe or sketch the change in an issue" — this one comes with
-the change already built and tested against v1.3.0 (base `fe74312`):
+the change already built and tested against v1.3.0 (base `fe74312`), on a branch of
+my fork:
 
-- **Patch:** <https://github.com/mcpatrickryan12/Default/blob/claude/verity-grok-build-hku1hr/patches/0001-add-grok-build-provider-driver.patch>
-- **Driver only:** <https://github.com/mcpatrickryan12/Default/blob/claude/verity-grok-build-hku1hr/verity-grok/agents/grok.cjs>
+- **Branch / diff:** <https://github.com/seanerama/verity-framework/compare/main...mcpatrickryan12:verity-framework:add-grok-build-provider>
 - **Design notes:** <https://github.com/mcpatrickryan12/Default/blob/claude/verity-grok-build-hku1hr/docs/grok-build-driver.md>
 
-Happy to reshape any of it for the development repo's conventions, split it, or hand
-it over as raw material — whatever fits the promotion pipeline best.
+Happy to reshape any of it for the development repo's conventions, split it, open a
+reference PR, or hand it over as raw material — whatever fits the promotion pipeline
+best.
 
 ## Why it's a small change
 
@@ -65,7 +66,8 @@ ADR-0005 registry discipline — `agent-exec.cjs` untouched:
   the two stage-8 registry pins in `tests/agents.test.cjs` generalized for a third
   provider
 
-`npm test` with the patch applied: **1193 passed, 0 failed** (v1.3.0 baseline 1168).
+`npm test` on the branch: **1193 passed, 0 failed** (v1.3.0 baseline 1168), and
+`npm run lint` (Biome CI) is clean.
 
 ## Honest caveats
 
@@ -77,5 +79,5 @@ knob if not), and (b) that `--allow` accepts every entry spelling used in the
 packaged `.tools.json` files. I can run that confirmation once pointed at a live
 `grok` login.
 
-If you'd rather receive this as a fork branch or reference PR instead of the patch
-link, say the word.
+If you'd rather receive this as a mailed patch or a reference PR instead of the
+branch link, say the word.

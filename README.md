@@ -18,7 +18,7 @@ This repo carries two deliverables:
 
 | Path | Contents |
 |---|---|
-| `patches/0001-add-grok-build-provider-driver.patch` | The full change against `seanerama/verity-framework` main (base commit `fe74312`, v1.3.0) |
+| `patches/0001-add-grok-build-provider-driver.patch` | The full change against `seanerama/verity-framework` main (base commit `fe74312`, v1.3.0) — also live on [the fork branch](https://github.com/mcpatrickryan12/verity-framework/tree/add-grok-build-provider) |
 | `verity-grok/agents/grok.cjs` | The driver (standalone copy) |
 | `verity-grok/tests/agents-grok.test.cjs` | Its 25-test characterization suite (standalone copy) |
 | `docs/grok-build-driver.md` | Design notes: wire-format mapping, permission model, install layout, what still needs a live-binary check |
