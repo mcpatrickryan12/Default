@@ -1,0 +1,264 @@
+From 5285f6b2c099dcfcbc0adb5ae359bbe437aee72a Mon Sep 17 00:00:00 2001
+From: Ryan McDonald <ryan.mcdonald@bit-bud.com>
+Date: Mon, 31 Aug 2026 05:33:05 +0000
+Subject: [PATCH] Make grok worker-selectable: agent.provider grok on the
+ claude-tier trust path
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Stage 2 of the Grok Build host: the local autonomy worker can now drive
+grok. The change is deliberately an enum-and-docs change, because every
+provider branch in the worker is written as === 'codex' — grok lands on
+the claude side of each one, which is the correct tier: its harness
+enforces the role's --allow rules at run time (headless refuses un-ruled
+calls) and performs its own git, both verified against xai-org/grok-build
+sources, so no containment tiers, state snapshots, or capability
+acknowledgements apply.
+
+- autonomy.cjs + schemas/autonomy.schema.json: provider enums gain 'grok'
+  (base and per-role); the codex-only knob guards already reject
+  sandbox/approval/containment_tier/acknowledged_enforcement_gaps for any
+  non-codex provider, grok included.
+- agent-exec.cjs / worker/index.cjs: usage strings and comments name the
+  third provider.
+- README host matrix: grok local-autonomy column flips to Supported;
+  QUICKSTART gains the minimal provider: grok autonomy.yml and the cost
+  note (API-key traffic stamps real cost; a subscription login may report
+  UNKNOWN, handled by limits.unknown_cost_behavior). Actions autonomy
+  stays deferred.
+- tests/agents-grok.test.cjs: four new tests — provider grok validates
+  (base + per-role), the codex-only knobs stay rejected under grok,
+  autonomous grok needs no containment tier while the codex tier-2 gate
+  is untouched, and resolveEffectiveAgent resolves a per-role grok
+  override.
+---
+ QUICKSTART.md                 | 22 ++++++++++-
+ README.md                     | 12 ++++--
+ schemas/autonomy.schema.json  |  4 +-
+ tests/agents-grok.test.cjs    | 72 +++++++++++++++++++++++++++++++++++
+ verity/bin/lib/agent-exec.cjs |  4 +-
+ verity/bin/lib/autonomy.cjs   |  6 ++-
+ verity/worker/index.cjs       |  2 +-
+ 7 files changed, 111 insertions(+), 11 deletions(-)
+
+diff --git a/QUICKSTART.md b/QUICKSTART.md
+index 7e13424..1b2facc 100644
+--- a/QUICKSTART.md
++++ b/QUICKSTART.md
+@@ -245,8 +245,26 @@ The role's `.tools.json` allowlist is passed as Grok `--allow` permission rules
+ — the entries Grok's rule grammar can express travel verbatim (an entry it
+ cannot express, like `Task`, is dropped; the uncovered call then fails closed
+ at runtime), no auto-approve flag is ever passed, and Grok's headless mode
+-refuses any tool call no rule covers. Worker/Actions autonomy for Grok is
+-deferred — use Claude or Codex for autonomy today.
++refuses any tool call no rule covers.
++
++The **local autonomy worker** can drive grok. Minimal `.verity/autonomy.yml`:
++
++```yaml
++mode: supervised
++review:
++  trust: 0
++agent:
++  provider: grok
++```
++
++grok sits on the claude-tier trust path — its harness enforces the role
++allowlist and performs its own git — so the codex knobs
++(`sandbox`/`approval`/`containment_tier`/`acknowledged_enforcement_gaps`) are
++rejected under `provider: grok`. One cost note: grok stamps real cost on
++API-key traffic, while a subscription login may report cost UNKNOWN — the
++worker's `limits.unknown_cost_behavior` (default: pause at the existing human
++gate) decides what happens then. GitHub Actions autonomy for Grok is deferred —
++run the worker locally.
+ 
+ ### Troubleshooting `verity doctor --agent grok`
+ 
+diff --git a/README.md b/README.md
+index ebe4944..f68dc5e 100644
+--- a/README.md
++++ b/README.md
+@@ -69,7 +69,7 @@ Verity runs on four hosts. Install flag, interactive syntax, and where headless
+ | **Claude Code** | `verity install --claude` | `/verity:vision` | Supported | Supported | Supported |
+ | **Codex CLI** | `verity install --codex` | `$verity-vision` | Supported (tier-1 containment) | Supervised: supported · unattended: opt-in tier-2, default off | **Deferred — local only (ADR-0009)** |
+ | **OpenCode** | `verity install --opencode` | `/verity-vision` | Interactive only | Interactive only | Interactive only |
+-| **Grok Build** | `verity install --grok` | `/verity-vision` | Supported | Deferred | Deferred |
++| **Grok Build** | `verity install --grok` | `/verity-vision` | Supported | Supported | Deferred |
+ 
+ Full Codex walkthrough, autonomy config, and troubleshooting: **[QUICKSTART.md → Codex CLI](QUICKSTART.md#codex-cli)**.
+ 
+@@ -94,8 +94,14 @@ grok`. Headless runs use `verity agent-exec <role> --agent grok`: the role's
+ `.tools.json` allowlist travels as Grok `--allow` permission rules (the entries
+ Grok's rule grammar can express; the rest fail closed at runtime), no
+ auto-approve flag is ever passed, and Grok's own headless mode refuses any tool
+-call no rule covers. Requires Grok Build ≥ 1.0.0 and a signed-in `grok` binary;
+-worker/Actions autonomy for Grok is deferred.
++call no rule covers. Requires Grok Build ≥ 1.0.0 and a signed-in `grok` binary.
++The **local autonomy worker** can select grok (`agent.provider: grok` in
++`.verity/autonomy.yml`) on the claude-tier trust path — grok's harness enforces
++the role allowlist and performs its own git, so none of the codex containment
++knobs apply (setting one is rejected). Cost note: grok stamps real cost on
++API-key traffic; a subscription login may report cost UNKNOWN, which the
++worker's `unknown_cost_behavior` (default: pause at the human gate) handles
++honestly. GitHub Actions autonomy for Grok is deferred.
+ 
+ > Autonomy is opt-in and off by default — installing gives you the hand-driven
+ > roles; enable the worker later with `/verity:autonomy-setup` when you want it.
+diff --git a/schemas/autonomy.schema.json b/schemas/autonomy.schema.json
+index cd65434..135d9b9 100644
+--- a/schemas/autonomy.schema.json
++++ b/schemas/autonomy.schema.json
+@@ -117,7 +117,7 @@
+       "properties": {
+         "provider": {
+           "description": "Headless runtime the worker dispatches roles to.",
+-          "enum": ["claude", "codex"],
++          "enum": ["claude", "codex", "grok"],
+           "default": "claude"
+         },
+         "model": {
+@@ -163,7 +163,7 @@
+               "type": "object",
+               "additionalProperties": false,
+               "properties": {
+-                "provider": { "enum": ["claude", "codex"] },
++                "provider": { "enum": ["claude", "codex", "grok"] },
+                 "model": { "type": ["string", "null"] },
+                 "sandbox": { "enum": ["read-only", "workspace-write", null] },
+                 "approval": { "enum": ["untrusted", "on-request", "never", null] },
+diff --git a/tests/agents-grok.test.cjs b/tests/agents-grok.test.cjs
+index 865ef15..353d46f 100644
+--- a/tests/agents-grok.test.cjs
++++ b/tests/agents-grok.test.cjs
+@@ -554,3 +554,75 @@ test('doctor: resolveAgent honors --agent grok and a grok install state', () =>
+   const fromState = doctor.resolveAgent({ cwd: home }, { home, env: {} });
+   assertEqual(fromState.agent, 'grok', 'install state under ~/.grok is a selection signal');
+ });
++
++// --- autonomy: worker-selectable grok (the claude-tier trust path) ---
++// grok's harness enforces the role's --allow rules at run time and performs
++// its own git (both source-verified above), so it validates and dispatches on
++// the claude side of every codex-only branch: no containment tiers, no state
++// snapshots, no capability acknowledgements.
++
++const autonomy = require('../verity/bin/lib/autonomy.cjs');
++const worker = require('../verity/worker/index.cjs');
++
++test('autonomy: agent.provider grok validates, base and per-role', () => {
++  assertEqual(
++    JSON.stringify(autonomy.validatePolicy({ agent: { provider: 'grok' } })),
++    '[]',
++    'base provider grok is a valid policy',
++  );
++  assertEqual(
++    JSON.stringify(
++      autonomy.validatePolicy({
++        agent: { provider: 'claude', roles: { build: { provider: 'grok' } } },
++      }),
++    ),
++    '[]',
++    'per-role override to grok is a valid policy',
++  );
++});
++
++test('autonomy: the codex-only knobs stay codex-only under provider grok', () => {
++  const errors = autonomy.validatePolicy({
++    agent: {
++      provider: 'grok',
++      sandbox: 'read-only',
++      containment_tier: 2,
++      acknowledged_enforcement_gaps: ['network'],
++    },
++  });
++  assert(
++    errors.some((e) => e.includes('agent.sandbox')),
++    'sandbox rejected for grok',
++  );
++  assert(
++    errors.some((e) => e.includes('agent.containment_tier')),
++    'containment_tier rejected for grok',
++  );
++  assert(
++    errors.some((e) => e.includes('acknowledged_enforcement_gaps')),
++    'acknowledgement knob rejected for grok',
++  );
++});
++
++test('worker: autonomous grok needs no containment tier (codex still does)', () => {
++  const grokPolicy = { mode: 'autonomous', agent: { provider: 'grok' } };
++  worker.assertContainmentTier(grokPolicy, worker.resolveEffectiveAgent(grokPolicy));
++
++  const codexPolicy = { mode: 'autonomous', agent: { provider: 'codex' } };
++  let err = null;
++  try {
++    worker.assertContainmentTier(codexPolicy, worker.resolveEffectiveAgent(codexPolicy));
++  } catch (e) {
++    err = e;
++  }
++  assert(err?.message.includes('tier-2'), 'the codex gate is untouched');
++});
++
++test('worker: resolveEffectiveAgent resolves a per-role grok override', () => {
++  const resolved = worker.resolveEffectiveAgent({
++    agent: { provider: 'claude', roles: { build: { provider: 'grok' } } },
++  });
++  assertEqual(resolved.base.provider, 'claude');
++  assertEqual(resolved.agentForRole('build').provider, 'grok');
++  assertEqual(resolved.agentForRole('review').provider, 'claude');
++});
+diff --git a/verity/bin/lib/agent-exec.cjs b/verity/bin/lib/agent-exec.cjs
+index e30b235..9262538 100644
+--- a/verity/bin/lib/agent-exec.cjs
++++ b/verity/bin/lib/agent-exec.cjs
+@@ -6,7 +6,7 @@
+ // up through the registry. This file must never regain provider specifics.
+ //
+ //   verity agent-exec build 7 --run-id <id> [--max-turns N] [--timeout-secs N]
+-//     [--agent claude|codex]
++//     [--agent claude|codex|grok]
+ //
+ // Flow:
+ //   1. Resolve role → commands/verity/<role>.md prompt file + its REQUIRED
+@@ -105,7 +105,7 @@ const DEFAULT_MAX_TURNS = 80;
+ // run-id and role become path components under ~/.verity/logs — keep them tame.
+ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+ const USAGE =
+-  'usage: verity agent-exec <role> [args...] --run-id <id> [--max-turns N] [--timeout-secs N] [--agent claude|codex] [--model M] [--sandbox S] [--approval A] [--acknowledge-gaps c1,c2] [--containment-tier 1|2] [--keep-workspace] [--state-snapshot JSON] [--substrate github|local]';
++  'usage: verity agent-exec <role> [args...] --run-id <id> [--max-turns N] [--timeout-secs N] [--agent claude|codex|grok] [--model M] [--sandbox S] [--approval A] [--acknowledge-gaps c1,c2] [--containment-tier 1|2] [--keep-workspace] [--state-snapshot JSON] [--substrate github|local]';
+ // ADR-0011 enforcement tiers. Tier 1 (stage 11: credential stripping +
+ // mandatory post-run invariants) is what every codex run has had since that
+ // stage and stays the DEFAULT. Tier 2 (stage 14: disposable shaped workspace +
+diff --git a/verity/bin/lib/autonomy.cjs b/verity/bin/lib/autonomy.cjs
+index b8abad2..af4bd52 100644
+--- a/verity/bin/lib/autonomy.cjs
++++ b/verity/bin/lib/autonomy.cjs
+@@ -414,7 +414,11 @@ const SPEC = {
+   agent: {
+     type: 'map',
+     keys: {
+-      provider: { type: 'enum', values: ['claude', 'codex'] },
++      // grok joins the enum at the claude tier (its harness enforces the
++      // role's --allow rules at run time and performs its own git, so every
++      // codex-only branch — containment tiers, state snapshots, capability
++      // acknowledgements — correctly stays codex-gated).
++      provider: { type: 'enum', values: ['claude', 'codex', 'grok'] },
+       model: { type: 'stringOrNull' },
+       sandbox: { type: 'enumOrNull', values: ['read-only', 'workspace-write'] },
+       approval: { type: 'enumOrNull', values: ['untrusted', 'on-request', 'never'] },
+diff --git a/verity/worker/index.cjs b/verity/worker/index.cjs
+index 1140e75..cec3cca 100755
+--- a/verity/worker/index.cjs
++++ b/verity/worker/index.cjs
+@@ -29,7 +29,7 @@
+ //       → proceed (token ceilings remain the bound; null NEVER counts as $0);
+ //     success → loop }
+ // Stage 9 (ADR-0005/0007): the run resolves ONE immutable agent config from
+-// the policy's `agent` block (provider claude|codex, model, sandbox/approval
++// the policy's `agent` block (provider claude|codex|grok, model, sandbox/approval
+ // narrowing overrides) and passes it — plus the REMAINING wall-clock budget
+ // as --timeout-secs, shrinking monotonically — into every chained dispatch.
+ // plus the T13 trust ladder (§4.5): when the REVIEW role completes with
+-- 
+2.43.0
+

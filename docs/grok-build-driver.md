@@ -88,10 +88,20 @@ only `verity install --grok` ran selects grok without a flag.
 
 ## Host matrix position
 
-Same tier as Codex's initial landing: **interactive + headless (`agent-exec`)
-supported; autonomy worker/Actions selection deferred** — the worker's provider
-policy is a separate, deliberate step (the framework gates worker-selectable
-providers on trust tiers).
+**Interactive + headless (`agent-exec`) + local autonomy worker supported;
+GitHub Actions autonomy deferred.** Worker selection (`agent.provider: grok`
+in `.verity/autonomy.yml`) is an enum-and-docs change on top of the driver,
+because every provider branch in the worker is written `=== 'codex'` and grok
+belongs on the claude side of each: its harness enforces the role's `--allow`
+rules at run time and performs its own git (both source-verified below), so no
+containment tiers, state snapshots, or capability acknowledgements apply — and
+the codex-only knobs are rejected under `provider: grok`, same as claude. The
+worker's budget breaker also gets what it needs: grok stamps real cost on
+API-key traffic (see the live confirmation below), while a subscription login
+may report UNKNOWN, handled by `limits.unknown_cost_behavior` (default: pause
+at the human gate). Actions autonomy needs only an auth/install variant of the
+generated workflow (`XAI_API_KEY` + the grok installer step) — deferred as the
+next stage.
 
 ## The rule-vocabulary projection (a bug the source review caught)
 
